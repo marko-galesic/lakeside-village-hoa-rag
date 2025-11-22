@@ -54,6 +54,20 @@ def main():
     )
 
     contexts = results["documents"][0]
+    metadatas = results["metadatas"][0]
+    distances = results.get("distances", [[None] * len(contexts)])[0]
+
+    print("\n=== RETRIEVAL TRACE ===")
+    for i, (ctx, meta, dist) in enumerate(zip(contexts, metadatas, distances)):
+        print(f"\nResult #{i+1}")
+        print(f"Source: {meta.get('source')} | Chunk index: {meta.get('chunk_index')}")
+        print(f"Distance: {dist}")
+        print("Chunk preview:")
+        print(ctx[:400].replace("\n", " ") + ("..." if len(ctx) > 400 else ""))
+    print("=== END RETRIEVAL TRACE ===\n")
+    
+
+    contexts = results["documents"][0]
     prompt = build_prompt(question, contexts)
 
     # 4. Ask GPT
