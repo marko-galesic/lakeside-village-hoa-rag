@@ -1,0 +1,8 @@
+openai>=1.0.0
+chromadb
+pypdf
+python-dotenv
+streamlit
+scikit-learn
+matplotlib
+
