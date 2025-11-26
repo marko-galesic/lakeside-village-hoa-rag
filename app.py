@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 
 from rag_utils import (
     ensure_dirs,
-    ingest_pdfs_in_data,
+    ingest_files_in_data,
     answer_question_with_rag,
     sample_collection_for_viz,
     project_embeddings_2d,
@@ -25,10 +25,10 @@ st.set_page_config(
 
 st.sidebar.title("HOA RAG Demo")
 
-st.sidebar.markdown("### 1. Upload PDFs")
+st.sidebar.markdown("### 1. Upload PDFs or JSON")
 uploaded_files = st.sidebar.file_uploader(
-    "Drop your HOA PDFs here",
-    type=["pdf"],
+    "Drop your HOA PDFs or JSON here",
+    type=["pdf", "json"],
     accept_multiple_files=True,
 )
 
@@ -40,13 +40,13 @@ if uploaded_files:
             out.write(f.read())
     st.sidebar.success(f"Saved {len(uploaded_files)} file(s) to data/")
 
-if st.sidebar.button("Ingest PDFs into vector DB"):
-    with st.spinner("Reading, chunking, embedding, and indexing PDFs..."):
-        n_chunks = ingest_pdfs_in_data()
+if st.sidebar.button("Ingest files into vector DB"):
+    with st.spinner("Reading, chunking, embedding, and indexing files..."):
+        n_chunks = ingest_files_in_data()
     if n_chunks > 0:
         st.sidebar.success(f"Ingested {n_chunks} chunks into Chroma.")
     else:
-        st.sidebar.warning("No PDFs found in data/ to ingest.")
+        st.sidebar.warning("No supported files found in data/ to ingest.")
 
 
 st.sidebar.markdown("---")
