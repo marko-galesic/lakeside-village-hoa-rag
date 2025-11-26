@@ -1,5 +1,6 @@
 # rag_utils.py
 import os
+import json
 from typing import List, Tuple, Dict, Any
 
 from dotenv import load_dotenv
@@ -32,6 +33,33 @@ def read_pdf_text(path: str) -> str:
         text = page.extract_text() or ""
         pages.append(text)
     return "\n".join(pages)
+
+
+def _flatten_json(value: Any, prefix: str = "") -> List[str]:
+    """Recursively flatten a JSON object into human-readable lines."""
+    lines: List[str] = []
+
+    if isinstance(value, dict):
+        for key, val in value.items():
+            new_prefix = f"{prefix}.{key}" if prefix else str(key)
+            lines.extend(_flatten_json(val, new_prefix))
+    elif isinstance(value, list):
+        for idx, item in enumerate(value):
+            new_prefix = f"{prefix}[{idx}]" if prefix else f"[{idx}]"
+            lines.extend(_flatten_json(item, new_prefix))
+    else:
+        key = prefix or "value"
+        lines.append(f"{key}: {value}")
+
+    return lines
+
+
+def read_json_text(path: str) -> str:
+    """Load JSON and flatten into text so it can be chunked and embedded."""
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    flattened = _flatten_json(data)
+    return "\n".join(flattened)
 
 
 def chunk_text(text: str, chunk_size: int = 1000, overlap: int = 200) -> List[str]:
@@ -79,30 +107,45 @@ def get_chroma_collection():
 
 # ---------- INGESTION ----------
 
-def ingest_pdfs_in_data() -> int:
+def ingest_files_in_data() -> int:
     """
-    Read all PDFs in data/, chunk, embed, and store in Chroma.
+    Read all supported files in data/, chunk, embed, and store in Chroma.
     Returns number of chunks indexed.
     """
     ensure_dirs()
     collection = get_chroma_collection()
 
-    all_ids = []
-    all_texts = []
-    all_meta = []
+    all_ids: List[str] = []
+    all_texts: List[str] = []
+    all_meta: List[Dict[str, Any]] = []
 
     for filename in os.listdir(DATA_DIR):
-        if not filename.lower().endswith(".pdf"):
-            continue
+        lower_name = filename.lower()
         path = os.path.join(DATA_DIR, filename)
-        full_text = read_pdf_text(path)
+
+        if lower_name.endswith(".pdf"):
+            full_text = read_pdf_text(path)
+            source_type = "pdf"
+        elif lower_name.endswith(".json"):
+            full_text = read_json_text(path)
+            source_type = "json"
+        else:
+            continue
+
+        if not full_text.strip():
+            continue
+
         chunks = chunk_text(full_text)
 
         for i, chunk in enumerate(chunks):
             doc_id = f"{filename}-chunk-{i}"
             all_ids.append(doc_id)
             all_texts.append(chunk)
-            all_meta.append({"source": filename, "chunk_index": i})
+            all_meta.append({
+                "source": filename,
+                "chunk_index": i,
+                "source_type": source_type,
+            })
 
     if not all_texts:
         return 0
@@ -117,6 +160,11 @@ def ingest_pdfs_in_data() -> int:
     )
 
     return len(all_texts)
+
+
+# Backward compatibility alias
+def ingest_pdfs_in_data() -> int:
+    return ingest_files_in_data()
 
 
 # ---------- QUERY + RETRIEVAL ----------
