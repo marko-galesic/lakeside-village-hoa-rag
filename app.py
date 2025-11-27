@@ -8,6 +8,8 @@ from rag_utils import ensure_dirs, ingest_files_in_data, answer_question_with_ra
 ensure_dirs()
 
 st.set_page_config(page_title="HOA RAG Demo")
+# Allow large uploads (up to 1 GB)
+st.set_option("server.maxUploadSize", 1024)
 
 st.title("HOA Document RAG")
 
@@ -20,6 +22,7 @@ uploaded_files = st.file_uploader(
     type=["pdf", "json"],
     accept_multiple_files=True,
 )
+st.caption("Supports uploads up to 1 GB per file.")
 
 if uploaded_files:
     for f in uploaded_files:
