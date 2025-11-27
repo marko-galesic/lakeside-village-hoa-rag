@@ -2,6 +2,7 @@
 import os
 from dotenv import load_dotenv
 from pypdf import PdfReader
+from tqdm import tqdm
 import chromadb
 from chromadb.config import Settings
 from openai import OpenAI
@@ -12,6 +13,7 @@ client = OpenAI()
 DATA_DIR = "data"
 DB_DIR = "db"
 COLLECTION_NAME = "hoa_docs"
+LARGE_FILE_THRESHOLD_BYTES = 5 * 1024 * 1024
 
 def read_pdf_text(path: str) -> str:
     reader = PdfReader(path)
@@ -31,13 +33,53 @@ def chunk_text(text: str, chunk_size: int = 1000, overlap: int = 200):
         start += chunk_size - overlap
     return chunks
 
-def get_embeddings(texts):
-    # texts: list[str]
-    resp = client.embeddings.create(
-        model="text-embedding-3-small",
-        input=texts,
-    )
-    return [e.embedding for e in resp.data]
+def get_embeddings(texts, show_progress: bool = False, batch_size: int = 16, desc: str = "Embedding chunks"):
+    if not texts:
+        return []
+
+    if not show_progress:
+        resp = client.embeddings.create(
+            model="text-embedding-3-small",
+            input=texts,
+        )
+        return [e.embedding for e in resp.data]
+
+    embeddings = []
+    with tqdm(total=len(texts), desc=desc) as pbar:
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i : i + batch_size]
+            resp = client.embeddings.create(
+                model="text-embedding-3-small",
+                input=batch,
+            )
+            embeddings.extend([e.embedding for e in resp.data])
+            pbar.update(len(batch))
+    return embeddings
+
+
+def index_chunks(collection, ids, embeddings, documents, metadatas, show_progress: bool = False, batch_size: int = 50, desc: str = "Indexing chunks"):
+    if not ids:
+        return
+
+    if not show_progress:
+        collection.add(
+            ids=ids,
+            embeddings=embeddings,
+            documents=documents,
+            metadatas=metadatas,
+        )
+        return
+
+    with tqdm(total=len(ids), desc=desc) as pbar:
+        for i in range(0, len(ids), batch_size):
+            end = i + batch_size
+            collection.add(
+                ids=ids[i:end],
+                embeddings=embeddings[i:end],
+                documents=documents[i:end],
+                metadatas=metadatas[i:end],
+            )
+            pbar.update(end - i)
 
 def main():
     # 1. Init Chroma
@@ -52,43 +94,42 @@ def main():
         collection = client_chroma.create_collection(COLLECTION_NAME)
 
     # 2. Read PDFs and build chunks
-    all_texts = []
-    all_ids = []
-    all_meta = []
-
-    doc_id_counter = 0
     for filename in os.listdir(DATA_DIR):
         if not filename.lower().endswith(".pdf"):
             continue
         path = os.path.join(DATA_DIR, filename)
+        is_large_file = os.path.getsize(path) > LARGE_FILE_THRESHOLD_BYTES
         print(f"Reading {path}...")
         full_text = read_pdf_text(path)
         chunks = chunk_text(full_text)
+        if not chunks:
+            print(f"No text found in {filename}. Skipping.")
+            continue
 
-        for i, chunk in enumerate(chunks):
-            doc_id = f"{filename}-chunk-{i}"
-            all_ids.append(doc_id)
-            all_texts.append(chunk)
-            all_meta.append({"source": filename, "chunk_index": i})
+        ids = [f"{filename}-chunk-{i}" for i in range(len(chunks))]
+        metadatas = [{"source": filename, "chunk_index": i} for i in range(len(chunks))]
 
-        doc_id_counter += 1
+        show_progress = is_large_file
+        progress_suffix = " (large file)" if is_large_file else ""
+        print(f"Embedding {len(chunks)} chunks from {filename}{progress_suffix}...")
+        embeddings = get_embeddings(
+            chunks,
+            show_progress=show_progress,
+            desc=f"Embedding {filename}",
+        )
 
-    if not all_texts:
-        print("No PDFs found in data/. Exiting.")
-        return
+        print(f"Indexing {len(chunks)} chunks from {filename}{progress_suffix}...")
+        index_chunks(
+            collection,
+            ids=ids,
+            embeddings=embeddings,
+            documents=chunks,
+            metadatas=metadatas,
+            show_progress=show_progress,
+            desc=f"Indexing {filename}",
+        )
 
-    print(f"Embedding {len(all_texts)} chunks...")
-    embeddings = get_embeddings(all_texts)
-
-    # 3. Add to Chroma
-    collection.add(
-        ids=all_ids,
-        embeddings=embeddings,
-        documents=all_texts,
-        metadatas=all_meta,
-    )
-
-    print(f"Indexed {len(all_texts)} chunks into collection '{COLLECTION_NAME}'")
+    print(f"Finished indexing collection '{COLLECTION_NAME}'")
 
 if __name__ == "__main__":
     main()

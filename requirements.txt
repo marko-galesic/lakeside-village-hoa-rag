@@ -2,6 +2,7 @@ openai>=1.0.0
 chromadb
 pypdf
 python-dotenv
+tqdm
 streamlit
 scikit-learn
 matplotlib
