@@ -23,6 +23,8 @@ uploaded_files = st.file_uploader(
 )
 st.caption("Supports uploads up to 1 GB per file.")
 
+progress_placeholder = st.empty()
+
 if uploaded_files:
     for f in uploaded_files:
         path = os.path.join("data", f.name)
@@ -31,8 +33,21 @@ if uploaded_files:
     st.success(f"Saved {len(uploaded_files)} file(s) to data/.")
 
 if st.button("Ingest files into vector DB"):
+    progress_state = {"bar": None}
+
+    def streamlit_progress(current, total, filename):
+        pct = current / total if total else 0
+        text = f"{filename}: chunk {current}/{total}"
+
+        if progress_state["bar"] is None:
+            progress_state["bar"] = progress_placeholder.progress(pct, text=text)
+        else:
+            progress_state["bar"].progress(pct, text=text)
+
     with st.spinner("Reading, chunking, embedding, and indexing files..."):
-        n_chunks = ingest_files_in_data()
+        n_chunks = ingest_files_in_data(progress_callback=streamlit_progress)
+
+    progress_placeholder.empty()
     if n_chunks > 0:
         st.success(f"Ingested {n_chunks} chunks into Chroma.")
     else:
