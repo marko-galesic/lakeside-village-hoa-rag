@@ -107,10 +107,13 @@ def get_chroma_collection():
 
 # ---------- INGESTION ----------
 
-def ingest_files_in_data() -> int:
+def ingest_files_in_data(progress_callback=None) -> int:
     """
     Read all supported files in data/, chunk, embed, and store in Chroma.
     Returns number of chunks indexed.
+
+    If provided, ``progress_callback`` is called for chunking large files (>5 MB)
+    with signature ``callback(current_chunk, total_chunks, filename)``.
     """
     ensure_dirs()
     collection = get_chroma_collection()
@@ -136,6 +139,8 @@ def ingest_files_in_data() -> int:
             continue
 
         chunks = chunk_text(full_text)
+        total_chunks = len(chunks)
+        show_progress = os.path.getsize(path) > 5 * 1024 * 1024 and total_chunks > 0
 
         for i, chunk in enumerate(chunks):
             doc_id = f"{filename}-chunk-{i}"
@@ -146,6 +151,12 @@ def ingest_files_in_data() -> int:
                 "chunk_index": i,
                 "source_type": source_type,
             })
+
+            if show_progress:
+                if progress_callback:
+                    progress_callback(i + 1, total_chunks, filename)
+                else:
+                    print(f"{filename}: chunk {i + 1}/{total_chunks}")
 
     if not all_texts:
         return 0
